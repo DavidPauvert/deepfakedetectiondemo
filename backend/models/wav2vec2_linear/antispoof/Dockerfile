@@ -31,6 +31,12 @@ RUN python -c "from fairseq import checkpoint_utils"
 
 WORKDIR /workspace
 
+# En gros : 
+# On va avoir besoin d'importer antispoof pour qu'on puisse faire nos trucs
+# OR, on peut pas le faire comme ça vu qu'il va s'exécuter dans un conteneur à part
+# Donc en gros j'ai créé un symlink pour que les imports marchent, et comme ça on peut globalement tout faire
+RUN mkdir -p /workspace/backend/models && ln -s /workspace /workspace/backend/models/antispoof
+
 # set PYTHONPATH to /workspace
 ENV PYTHONPATH=/workspace
 
