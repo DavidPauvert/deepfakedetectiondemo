@@ -15,7 +15,7 @@ import torch
 SR = 16000
 
 import librosa
-from backend.models.antispoof.hparams_class import HParams
+from hparams_class import HParams
 
 
 def load_audio(filepath, device, no_padd=False, padd_with_zeros=False):
@@ -66,7 +66,7 @@ def load_counter_measure_model(hps):
 
     if hps['cmmodel'] == 'tcm_add':
         print('Loading TCM-Add model...')
-        from backend.models.antispoof.tcm_add.model import Model
+        from tcm_add.model import Model
 
         # hard coded args for tcm_add, except for the checkpoint path and xlsr path which are provided in the config
         args_tcm_add = HParams(
@@ -89,7 +89,7 @@ def load_counter_measure_model(hps):
 
     elif hps['cmmodel'] == 'wav2vec_linear':
         print("Loading My's Wav2Vec + Linear model...")
-        from backend.models.antispoof.wav2vec_linear.model import SSLClassifier
+        from wav2vec_linear.model import SSLClassifier
         # set the counter measure checkpoint path
         checkpoint_path = hps['ckpt_path']
         model_cm = SSLClassifier(wav2vec_model_dir=hps['xlsr_path'])
