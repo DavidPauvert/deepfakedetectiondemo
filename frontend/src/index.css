@@ -1,50 +1,74 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
-    @apply text-[rgba(255,255,255,0.87)] bg-[#242424] font-sans;
-  }
+    :root {
+        --bg-header: #fff4d0;
+        --accent-cyan: #4fe3e8;
+        --accent-orange: #ff8c42;
+        --gauge-red: #ef4444;
+        --gauge-green: #10b981;
+        color: #1f2937;
+        background-color: #fbfbfb;
+        font-family:
+            system-ui,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            Roboto,
+            Oxygen,
+            Ubuntu,
+            Cantarell,
+            "Helvetica Neue",
+            sans-serif;
+    }
 
-  body {
-    @apply grid place-items-center min-w-[320px] min-h-screen relative m-0;
-  }
+    body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        background-color: #fbfbfb;
+        color: #1f2937;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.05;
-  background: url("./logo.svg");
-  background-size: 256px;
-  transform: rotate(-12deg) scale(1.35);
-  animation: slide 30s linear infinite;
-  pointer-events: none;
+/* Custom needle transition */
+.needle-transition {
+    transition: transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: 100px 100px;
 }
 
-@keyframes slide {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 256px 224px;
-  }
+/* Waveform pulse animation */
+@keyframes wavePulse {
+    0%,
+    100% {
+        transform: scaleY(0.4);
+    }
+    50% {
+        transform: scaleY(1);
+    }
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.wave-bar-active {
+    animation: wavePulse 1.2s ease-in-out infinite;
 }
 
-@media (prefers-reduced-motion) {
-  *,
-  ::before,
-  ::after {
-    animation: none !important;
-  }
+/* Accessible focus outline */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+    outline: 2px solid #0284c7;
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
