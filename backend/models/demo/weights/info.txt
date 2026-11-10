@@ -1,0 +1,2 @@
+Ce dossier est référencé par "weights_path" dans le fichier model.json.
+C'est ici que vous pouvez ranger les poids de vos modèles pour qu'ils ne soient pas inclus dans les images Docker et soient chargées en runtime à la place.

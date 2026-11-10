@@ -1,0 +1,14 @@
+{
+    "name": "Demo",
+    "description": "Demo antispoof returning random results",
+    "image_tag": "demospoof:latest",
+    "dockerfile": "Dockerfile",
+    "command": [
+            "python main.py ",
+            "--audiodir /audio "
+    ],
+    "default_threshold": 0.0,
+    "weights_path": "weights/",
+    "audio_path": "audio/",
+    "parser_path": "parser.py"
+}
