@@ -1,16 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.api.routes import router as api_router
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Start : on check que le dossier audiotemp existe pour le traitement
-    settings.TEMP_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    yield
-    # TODO : J'ai pas encore implémenté de shutdown logic oopsie
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -18,7 +10,6 @@ app = FastAPI(
     description=(
         "Une API de détection de deepfake qui utilise des modèles via Docker."
     ),
-    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )

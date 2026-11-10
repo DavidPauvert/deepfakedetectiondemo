@@ -53,15 +53,15 @@ def list_models():
     """
     model_infos = []
     for model_id, cfg in MODELS_REGISTRY.items():
-        is_built = docker_runner.is_image_built(cfg["image_tag"])
+        is_built = docker_runner.is_image_built(cfg.image_tag)
         model_infos.append(
             ModelInfo(
                 id=model_id,
-                name=cfg["name"],
-                description=cfg["description"],
-                image_tag=cfg["image_tag"],
+                name=cfg.name,
+                description=cfg.description,
+                image_tag=cfg.image_tag,
                 image_built=is_built,
-                default_threshold=cfg["default_threshold"],
+                default_threshold=cfg.default_threshold,
             )
         )
 
@@ -87,7 +87,7 @@ def build_model(model_id: str):
         return {
             "status": "success",
             "model_id": model_id,
-            "message": f"Image '{MODELS_REGISTRY[model_id]['image_tag']}' construite.",
+            "message": f"Image '{MODELS_REGISTRY[model_id].image_tag}' construite.",
             "build_output_snippet": output[-500:] if len(output) > 500 else output,
         }
     except Exception as e:

@@ -1,0 +1,17 @@
+{
+    "name": "IRISA Wav2Vec2 + Linear",
+    "description": "Anti-spoofing deepfake audio detection using Wav2Vec2 XLS-R 300M and a linear classifier",
+    "image_tag": "antispoofs:latest",
+    "dockerfile": "antispoof/Dockerfile",
+    "command": [
+            "python inference.py ",
+            "--audiodir /audio ",
+            "--cmmodel wav2vec_linear ",
+            "--ckpt_path /wav2vec2_linear/spoofing_ckpt2.ckpt ",
+            "--xlsr_path /wav2vec2_linear/wav2vec_xlsr_300m"
+    ],
+    "default_threshold": 0.0,
+    "weights_path": "wav2vec2_linear/",
+    "audio_path": "audio/",
+    "parser_path": "parser.py"
+}

@@ -25,8 +25,9 @@ uvicorn main:app --reload --port 8000
 
 ## Activation du GPU NVIDIA dans Docker
 
-Les modèles tournant sur docker requierent CUDA pour exécuter leurs inférences.
-Assurez vous donc d'avoir les drivers nécessaires si vous faites tourner le projet sous linux (Il s'agit du package nvidia-container-toolkit)
+Les modèles tournant sur docker nécessitent CUDA pour exécuter leurs inférences.
+
+Vous devez donc posséder une carte graphique NVIDIA et installer `nvidia-container-tooklit` (consignes d'installations [ici](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html))
 
 Vous pouvez ensuite vérifier la disponibilité via :
 ```bash
@@ -72,20 +73,34 @@ curl -X POST http://localhost:8000/api/predict/batch \
 
 Le système est conçu pour accueillir de nouveaux modèles sans altérer leur code interne :
 
-1. Déposez le nouveau modèle dans son propre sous-dossier, par exemple : `models/mon_nouveau_modele/`
+1. Déposez le nouveau modèle dans son propre sous-dossier dans le dossier `models/` (ex: `models/mon_nouveau_modele/`)
+
 2. Assurez-vous que sa `Dockerfile` construit et exécute son script d'inférence.
-3. Déclarez le modèle dans [app/core/models_registry.py](file:///home/epic/Documents/BUT/BUT3/SAE/deepfakedetectiondemo/backend/app/core/models_registry.py) :
-```python
-MODELS_REGISTRY["mon_nouveau_modele"] = {
-    "id": "mon_nouveau_modele",
+
+3. Déclarez les propriétés du modèle dans un fichier `model.json` directement dans le dossier (ex: `models/mon_nouveau_modele/model.json`):
+```json
+{
     "name": "Le nom du modèle",
     "description": "Description du modèle...",
     "image_tag": "mon_nouveau_modele:latest",
-    "dockerfile_dir": "models/mon_nouveau_modele",
-    "command": "python inference.py --audio /workspace/audio ...",
+    "dockerfile": "chemin/local/Dockerfile",
+    "command": ["python inference.py ", "--audio /audio ...", "..."] OU "python inference.py --audio /audio ...",
     "default_threshold": 0.0,
-    "get_volumes": get_volumes_callback,
-    "parse_output": parse_output_callback,
+    "weights_path": "wav2vec2_linear/",
+    "audio_path": "audio/",
+    "parser_path": "chemin/local/parser.py"
 }
 ```
-L'API détectera automatiquement le nouveau modèle dès le redémarrage.
+L'API détectera alors automatiquement le nouveau modèle dès le redémarrage.
+
+4. Construisez le modèle. Vous avez alors deux possibilités:
+    1. Via l'API:
+      ```bash
+      curl -X POST http://localhost:8000/api/models/demo/mon_nouveau_modele
+      ```
+    2. Directement via la commande `docker build` comme une image classique, en spécifiant bien le même tag d'image que dans `image_tag`.  
+    L'interface côté client étant fatalement limitée sur ce sujet, il est préférable de build directement pour avoir un retour en direct de Docker.
+
+Tous les chemins spécifiés dans le fichier model.json doivent être relatifs au dossier du modèle.  
+
+Pour plus de détails sur le fonctionnement, référez-vous au modèle démo dans `models/demo/`.

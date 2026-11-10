@@ -5,7 +5,6 @@ Ce module centralise les paramètres de configuration chargés au démarrage du 
 via Pydantic Settings, incluant les chemins de répertoires, les paramètres Docker/GPU
 et la politique CORS pour les requêtes du frontend.
 """
-import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -27,8 +26,9 @@ class Settings(BaseSettings):
     # Répertoires de travail
     # BASE_DIR pointe vers la racine du dossier backend (3 niveaux au-dessus de ce fichier)
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
-    # TEMP_AUDIO_DIR stocke temporairement les fichiers audio reçus lors des requêtes d'analyse
-    TEMP_AUDIO_DIR: Path = BASE_DIR / "temp_audio"
+
+    # MODELS_DIR stocke les modèles proposés par l'appli
+    MODELS_DIR: Path = BASE_DIR / "models"
 
     # Paramètres Docker et accélération matérielle
     # USE_GPU active la prise en charge des GPU NVIDIA ('all') dans les conteneurs Docker
