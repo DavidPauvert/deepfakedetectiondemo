@@ -1,16 +1,26 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import type { UploadedAudioFile, ModelInfo, PredictionResult } from "../types";
+import type {
+    UploadedAudioFile,
+    ModelBuildStates,
+    ModelInfo,
+    PredictionResult,
+} from "../types";
 import { AudioUploader } from "./AudioUploader";
 import { ModelSelector } from "./ModelSelector";
 import { AudioPlayer } from "./AudioPlayer";
 import { GaugeMeter } from "./GaugeMeter";
 import { analyzeSingleAudio, calculateAIPercentage } from "../services/api";
+import { getSingleAnalysisBlockReason } from "../services/modelReadiness";
 
 export interface SingleAnalysisViewProps {
     /** Modèles disponibles issus de l'API */
     models: ModelInfo[];
     /** ID du modèle sélectionné par défaut */
     defaultModelId: string;
+    /** États des builds Docker, indexés par identifiant de modèle */
+    modelBuildStates: ModelBuildStates;
+    /** Déclenche la construction ou reconstruction d'un modèle */
+    onBuildModel: (modelId: string) => void;
 }
 
 /**
@@ -20,6 +30,8 @@ export interface SingleAnalysisViewProps {
 export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
     models,
     defaultModelId,
+    modelBuildStates,
+    onBuildModel,
 }) => {
     // Fichier audio téléversé
     const [uploadedFiles, setUploadedFiles] = useState<UploadedAudioFile[]>([]);
@@ -106,7 +118,16 @@ export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
 
     // Lancement de l'analyse via l'API backend
     const handleAnalyze = useCallback(async () => {
-        if (uploadedFiles.length === 0) return;
+        const blockReason = getSingleAnalysisBlockReason(
+            models,
+            selectedModelId,
+            uploadedFiles.length > 0,
+        );
+        if (blockReason) {
+            setErrorMessage(blockReason);
+            return;
+        }
+
         const currentAudio = uploadedFiles[0]!;
 
         const controller = new AbortController();
@@ -130,7 +151,7 @@ export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
             setIsLoading(false);
             abortControllerRef.current = null;
         }
-    }, [uploadedFiles, selectedModelId]);
+    }, [uploadedFiles, selectedModelId, models]);
 
     // Annuler la requête en cours
     const handleCancelAnalysis = useCallback(() => {
@@ -158,6 +179,12 @@ export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
 
     const hasFile = uploadedFiles.length > 0;
     const currentFile = uploadedFiles[0];
+    const analysisBlockReason = getSingleAnalysisBlockReason(
+        models,
+        selectedModelId,
+        hasFile,
+    );
+    const isAnalyzeDisabled = analysisBlockReason !== null || isLoading;
 
     if (predictionResult && currentFile) {
         const aiPercentage = calculateAIPercentage(predictionResult);
@@ -261,6 +288,8 @@ export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
                 models={models}
                 selectedModelIds={[selectedModelId]}
                 onSelectModel={(id) => setSelectedModelId(id)}
+                modelBuildStates={modelBuildStates}
+                onBuildModel={onBuildModel}
                 multiSelect={false}
                 title="2. Choisissez un modèle"
             />
@@ -296,10 +325,10 @@ export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
                     <button
                         type="button"
                         onClick={handleAnalyze}
-                        disabled={!hasFile || isLoading}
+                        disabled={isAnalyzeDisabled}
                         aria-busy={isLoading}
                         className={`px-12 py-3.5 rounded-2xl text-base font-bold shadow-xs transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
-                            !hasFile || isLoading
+                            isAnalyzeDisabled
                                 ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
                                 : "bg-[#4FE3E8] hover:bg-[#3cd0d5] text-gray-950 active:scale-95"
                         }`}
@@ -344,6 +373,16 @@ export const SingleAnalysisView: React.FC<SingleAnalysisViewProps> = ({
                         </button>
                     )}
                 </div>
+
+                {/* Raison du blocage du bouton Analyser */}
+                {!isLoading && analysisBlockReason && (
+                    <p
+                        className="text-center text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 max-w-md"
+                        role="status"
+                    >
+                        {analysisBlockReason}
+                    </p>
+                )}
 
                 {/* Message d'information pendant les inférences longues */}
                 {isLoading && (

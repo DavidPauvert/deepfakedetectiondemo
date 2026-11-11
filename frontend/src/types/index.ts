@@ -66,6 +66,44 @@ export interface ModelsListResponse {
 }
 
 /**
+ * Response returned by the model build endpoint
+ * (POST /api/models/{model_id}/build).
+ */
+export interface BuildModelResponse {
+    /** Backend operation status, typically "success" */
+    status: string;
+    /** Identifier of the model whose image was built */
+    model_id: string;
+    /** Human-readable success message */
+    message: string;
+    /** Tail end of the Docker build logs */
+    build_output_snippet?: string;
+}
+
+/**
+ * Lifecycle of a Docker image build triggered from the UI.
+ * A model without an entry is considered idle.
+ */
+export type ModelBuildStatus = "building" | "success" | "error";
+
+/**
+ * State of one model's Docker image build.
+ */
+export interface ModelBuildState {
+    /** Current build status */
+    status: ModelBuildStatus;
+    /** Error message when status is "error" */
+    error?: string;
+    /** Timestamp used to display the elapsed build time */
+    startedAt?: number;
+}
+
+/**
+ * Build states indexed by model ID.
+ */
+export type ModelBuildStates = Record<string, ModelBuildState>;
+
+/**
  * System and service health check response (/api/health).
  */
 export interface HealthResponse {

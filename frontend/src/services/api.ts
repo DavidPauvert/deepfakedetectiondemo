@@ -12,6 +12,7 @@ import type {
     ModelsListResponse,
     PredictionResult,
     BatchPredictionResponse,
+    BuildModelResponse,
 } from "../types";
 
 const STORAGE_KEY = "super_detector_backend_url";
@@ -188,14 +189,62 @@ export async function fetchModels(
 }
 
 /**
- * Déclenche la construction de l'image Docker pour un modèle spécifique.
+ * Extrait un message lisible depuis le corps d'erreur renvoyé par FastAPI.
+ * Le champ `detail` peut être une chaîne, un tableau d'erreurs de validation
+ * ou un objet.
+ */
+function extractApiErrorDetail(errorData: unknown, fallback: string): string {
+    if (
+        typeof errorData === "object" &&
+        errorData !== null &&
+        "detail" in errorData
+    ) {
+        const detail = (errorData as { detail?: unknown }).detail;
+
+        if (typeof detail === "string" && detail.trim()) {
+            return detail;
+        }
+
+        if (Array.isArray(detail)) {
+            const messages = detail
+                .map((item) => {
+                    if (
+                        typeof item === "object" &&
+                        item !== null &&
+                        "msg" in item
+                    ) {
+                        return String((item as { msg: unknown }).msg);
+                    }
+                    return typeof item === "string"
+                        ? item
+                        : JSON.stringify(item);
+                })
+                .filter(Boolean);
+
+            if (messages.length > 0) {
+                return messages.join("\n");
+            }
+        } else if (detail !== undefined) {
+            return JSON.stringify(detail);
+        }
+    }
+
+    return fallback;
+}
+
+/**
+ * Déclenche la construction (ou reconstruction) de l'image Docker pour un
+ * modèle spécifique. Le build pouvant être long, aucun timeout côté frontend
+ * n'est appliqué.
  */
 export async function buildModelImage(
     modelId: string,
+    targetBaseUrl?: string,
     signal?: AbortSignal,
-): Promise<{ status: string; message: string }> {
+): Promise<BuildModelResponse> {
     const url = buildEndpointUrl(
         `/api/models/${encodeURIComponent(modelId)}/build`,
+        targetBaseUrl,
     );
     try {
         const response = await fetch(url, {
@@ -209,12 +258,14 @@ export async function buildModelImage(
                 .json()
                 .catch(() => ({ detail: response.statusText }));
             throw new Error(
-                errorData.detail ||
+                extractApiErrorDetail(
+                    errorData,
                     `Échec de la construction (HTTP ${response.status})`,
+                ),
             );
         }
 
-        return (await response.json()) as { status: string; message: string };
+        return (await response.json()) as BuildModelResponse;
     } catch (err) {
         throw handleFetchError(err, url);
     }

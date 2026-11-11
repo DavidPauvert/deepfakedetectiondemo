@@ -1,7 +1,13 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import "./index.css";
-import type { HealthResponse, ModelInfo, ViewMode } from "./types";
+import type {
+    HealthResponse,
+    ModelBuildStates,
+    ModelInfo,
+    ViewMode,
+} from "./types";
 import {
+    buildModelImage,
     checkBackendHealth,
     fetchModels,
     getStoredApiUrl,
@@ -35,6 +41,25 @@ export function App() {
         useState<boolean>(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
     const [isChangingServer, setIsChangingServer] = useState<boolean>(false);
+    // États des builds Docker, indexés par identifiant de modèle
+    const [modelBuildStates, setModelBuildStates] = useState<ModelBuildStates>(
+        {},
+    );
+
+    // Références utilitaires pour éviter les mises à jour obsolètes
+    const currentApiUrlRef = useRef<string>(currentApiUrl);
+    const modelRefreshSeqRef = useRef<number>(0);
+    const buildingModelIdsRef = useRef<Set<string>>(new Set());
+    const modelsRef = useRef<ModelInfo[]>(models);
+
+    // Garde les références synchronisées avec l'état React
+    useEffect(() => {
+        currentApiUrlRef.current = currentApiUrl;
+    }, [currentApiUrl]);
+
+    useEffect(() => {
+        modelsRef.current = models;
+    }, [models]);
 
     // Teste la connectivité vers l'adresse d'API enregistrée
     const checkCurrentServer = useCallback(
@@ -48,6 +73,7 @@ export function App() {
 
             setIsCheckingConnection(true);
             setConnectionError(null);
+            const refreshSeq = ++modelRefreshSeqRef.current;
 
             try {
                 const [healthData, modelsData] = await Promise.all([
@@ -56,10 +82,12 @@ export function App() {
                 ]);
 
                 setHealth(healthData);
-                setModels(modelsData.models || []);
-                setDefaultModelId(
-                    modelsData.default_model_id || "wav2vec2_linear",
-                );
+                if (refreshSeq === modelRefreshSeqRef.current) {
+                    setModels(modelsData.models || []);
+                    setDefaultModelId(
+                        modelsData.default_model_id || "wav2vec2_linear",
+                    );
+                }
                 setIsBackendConnected(true);
                 setIsChangingServer(false);
             } catch (err: unknown) {
@@ -82,15 +110,123 @@ export function App() {
         }
     }, [currentApiUrl, checkCurrentServer]);
 
+    // Rafraîchit la liste des modèles en ignorant les réponses obsolètes.
+    // Retourne null si le rafraîchissement a échoué ou a été remplacé.
+    const refreshModelsFromBackend = useCallback(
+        async (targetUrl: string): Promise<ModelInfo[] | null> => {
+            const refreshSeq = ++modelRefreshSeqRef.current;
+
+            try {
+                const data = await fetchModels(targetUrl);
+                if (
+                    refreshSeq !== modelRefreshSeqRef.current ||
+                    targetUrl !== currentApiUrlRef.current
+                ) {
+                    return null;
+                }
+
+                const nextModels = data.models || [];
+                setModels(nextModels);
+                setDefaultModelId(data.default_model_id || "wav2vec2_linear");
+                return nextModels;
+            } catch {
+                // On conserve l'état optimiste déjà appliqué.
+                return null;
+            }
+        },
+        [],
+    );
+
+    // Lance la construction (ou reconstruction) d'un modèle.
+    // Plusieurs modèles peuvent être construits en parallèle.
+    const handleBuildModel = useCallback(
+        async (modelId: string) => {
+            const targetUrl = currentApiUrlRef.current;
+            if (!targetUrl || buildingModelIdsRef.current.has(modelId)) {
+                return;
+            }
+
+            const wasBuiltBefore =
+                modelsRef.current.find((model) => model.id === modelId)
+                    ?.image_built ?? false;
+
+            buildingModelIdsRef.current.add(modelId);
+            setModelBuildStates((prev) => ({
+                ...prev,
+                [modelId]: { status: "building", startedAt: Date.now() },
+            }));
+
+            try {
+                await buildModelImage(modelId, targetUrl);
+
+                // Le serveur a changé : on ignore ce résultat tardif.
+                if (targetUrl !== currentApiUrlRef.current) {
+                    return;
+                }
+
+                // Mise à jour optimiste immédiate, puis rafraîchissement réel.
+                setModels((prev) =>
+                    prev.map((model) =>
+                        model.id === modelId
+                            ? { ...model, image_built: true }
+                            : model,
+                    ),
+                );
+                setModelBuildStates((prev) => ({
+                    ...prev,
+                    [modelId]: { status: "success" },
+                }));
+
+                await refreshModelsFromBackend(targetUrl);
+            } catch (err: unknown) {
+                if (targetUrl !== currentApiUrlRef.current) {
+                    return;
+                }
+
+                const message =
+                    err instanceof Error ? err.message : String(err);
+
+                // Un build peut échouer côté client alors que l'image a bien
+                // été créée (timeout réseau, coupure...). On vérifie donc
+                // l'état réel avant d'afficher une erreur.
+                const refreshedModels =
+                    await refreshModelsFromBackend(targetUrl);
+
+                // Seule une image nouvellement construite transforme l'échec
+                // en succès. Un rebuild raté d'un modèle déjà construit reste
+                // une erreur, même si l'ancienne image est toujours présente.
+                const isBuiltAfterError =
+                    !wasBuiltBefore &&
+                    (refreshedModels?.some(
+                        (model) => model.id === modelId && model.image_built,
+                    ) ??
+                        false);
+
+                setModelBuildStates((prev) => ({
+                    ...prev,
+                    [modelId]: isBuiltAfterError
+                        ? { status: "success" }
+                        : { status: "error", error: message },
+                }));
+            } finally {
+                buildingModelIdsRef.current.delete(modelId);
+            }
+        },
+        [refreshModelsFromBackend],
+    );
+
     // Callback lorsque l'utilisateur valide l'adresse du serveur sur l'écran d'accueil
     const handleServerConnected = (
         newUrl: string,
         healthData: HealthResponse,
         loadedModels: ModelInfo[],
     ) => {
+        currentApiUrlRef.current = newUrl;
+        modelRefreshSeqRef.current += 1;
         setCurrentApiUrl(newUrl);
         setHealth(healthData);
         setModels(loadedModels);
+        setModelBuildStates({});
         setIsBackendConnected(true);
         setIsChangingServer(false);
         setConnectionError(null);
@@ -99,10 +235,13 @@ export function App() {
     // Réinitialise l'adresse pour en demander une nouvelle
     const handleResetServer = () => {
         setStoredApiUrl("");
+        currentApiUrlRef.current = "";
+        modelRefreshSeqRef.current += 1;
         setCurrentApiUrl("");
         setIsBackendConnected(false);
         setHealth(null);
         setModels([]);
+        setModelBuildStates({});
         setIsChangingServer(true);
     };
 
@@ -224,6 +363,8 @@ export function App() {
                 <SingleAnalysisView
                     models={models}
                     defaultModelId={defaultModelId}
+                    modelBuildStates={modelBuildStates}
+                    onBuildModel={handleBuildModel}
                 />
             );
         }
@@ -232,6 +373,8 @@ export function App() {
             <BatchAnalysisView
                 models={models}
                 defaultModelId={defaultModelId}
+                modelBuildStates={modelBuildStates}
+                onBuildModel={handleBuildModel}
             />
         );
     };

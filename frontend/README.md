@@ -57,4 +57,5 @@ Le frontend s'interface avec les endpoints FastAPI du dossier `backend` :
 - `prob = 1.0 / (1.0 + exp(-score))`
 - Si `prediction == "spoof"` : la probabilité que l'audio soit issu d'une IA correspond à `confidence` (ex: 67%).
 - Si `prediction == "bonafide"` : la probabilité d'IA correspond à `(1.0 - confidence)` (ex: 4%).
+
 ---

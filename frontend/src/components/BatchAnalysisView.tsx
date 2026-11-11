@@ -5,18 +5,28 @@ import React, {
     useEffect,
     useRef,
 } from "react";
-import type { UploadedAudioFile, ModelInfo, PredictionResult } from "../types";
+import type {
+    UploadedAudioFile,
+    ModelBuildStates,
+    ModelInfo,
+    PredictionResult,
+} from "../types";
 import { AudioUploader } from "./AudioUploader";
 import { ModelSelector } from "./ModelSelector";
 import { AudioPlayer } from "./AudioPlayer";
 import { GaugeMeter } from "./GaugeMeter";
 import { analyzeBatchAudio, calculateAIPercentage } from "../services/api";
+import { getBatchAnalysisBlockReason } from "../services/modelReadiness";
 
 export interface BatchAnalysisViewProps {
     /** Modèles disponibles retournés par le backend */
     models: ModelInfo[];
     /** ID du modèle sélectionné par défaut */
     defaultModelId: string;
+    /** États des builds Docker, indexés par identifiant de modèle */
+    modelBuildStates: ModelBuildStates;
+    /** Déclenche la construction ou reconstruction d'un modèle */
+    onBuildModel: (modelId: string) => void;
 }
 
 /**
@@ -27,6 +37,8 @@ export interface BatchAnalysisViewProps {
 export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
     models,
     defaultModelId,
+    modelBuildStates,
+    onBuildModel,
 }) => {
     // Liste des fichiers téléversés
     const [uploadedFiles, setUploadedFiles] = useState<UploadedAudioFile[]>([]);
@@ -122,7 +134,15 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
 
     // Lancement du traitement par lot réel
     const handleRunBatch = useCallback(async () => {
-        if (uploadedFiles.length === 0 || selectedModelIds.length === 0) return;
+        const blockReason = getBatchAnalysisBlockReason(
+            models,
+            selectedModelIds,
+            uploadedFiles.length > 0,
+        );
+        if (blockReason) {
+            setErrorMessage(blockReason);
+            return;
+        }
 
         const controller = new AbortController();
         abortControllerRef.current = controller;
@@ -158,7 +178,7 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
             setProgressPercent(0);
             abortControllerRef.current = null;
         }
-    }, [uploadedFiles, selectedModelIds]);
+    }, [uploadedFiles, selectedModelIds, models]);
 
     // Annuler le traitement par lot en cours
     const handleCancelBatch = useCallback(() => {
@@ -203,6 +223,19 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
         if (statusFilter === "all") return batchResults;
         return batchResults.filter((r) => r.prediction === statusFilter);
     }, [batchResults, statusFilter]);
+
+    // Raison du blocage du bouton d'analyse par lot bordel
+    const batchAnalysisBlockReason = useMemo(
+        () =>
+            getBatchAnalysisBlockReason(
+                models,
+                selectedModelIds,
+                uploadedFiles.length > 0,
+            ),
+        [models, selectedModelIds, uploadedFiles.length],
+    );
+    const isBatchAnalyzeDisabled =
+        batchAnalysisBlockReason !== null || isLoading;
 
     // Export CSV
     const exportCSV = useCallback(() => {
@@ -261,6 +294,8 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                         models={models}
                         selectedModelIds={selectedModelIds}
                         onSelectModel={handleToggleModel}
+                        modelBuildStates={modelBuildStates}
+                        onBuildModel={onBuildModel}
                         multiSelect={true}
                         title="2. Sélectionnez les modèles à évaluer"
                     />
@@ -269,15 +304,9 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                         <button
                             type="button"
                             onClick={handleRunBatch}
-                            disabled={
-                                uploadedFiles.length === 0 ||
-                                selectedModelIds.length === 0 ||
-                                isLoading
-                            }
+                            disabled={isBatchAnalyzeDisabled}
                             className={`w-full py-4 px-8 rounded-2xl font-bold text-base shadow-xs transition-all duration-150 flex items-center justify-center gap-2 cursor-pointer ${
-                                uploadedFiles.length === 0 ||
-                                selectedModelIds.length === 0 ||
-                                isLoading
+                                isBatchAnalyzeDisabled
                                     ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                                     : "bg-[#4FE3E8] hover:bg-[#3cd0d5] text-gray-950 active:scale-98"
                             }`}
@@ -333,6 +362,16 @@ export const BatchAnalysisView: React.FC<BatchAnalysisViewProps> = ({
                             </button>
                         )}
                     </div>
+
+                    {/* Raison du blocage du bouton Analyser */}
+                    {!isLoading && batchAnalysisBlockReason && (
+                        <p
+                            className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2"
+                            role="status"
+                        >
+                            {batchAnalysisBlockReason}
+                        </p>
+                    )}
                 </div>
             </div>
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import {
+    buildModelImage,
     calculateAIPercentage,
     normalizeApiUrl,
     buildEndpointUrl,
@@ -118,6 +119,80 @@ describe("API Service & URL Handling", () => {
             expect(
                 buildEndpointUrl("/api/models", "http://autre-serveur:9000"),
             ).toBe("http://autre-serveur:9000/api/models");
+        });
+    });
+
+    describe("buildModelImage", () => {
+        it("devrait envoyer un POST vers l'URL de base fournie", async () => {
+            const originalFetch = globalThis.fetch;
+            let calledUrl = "";
+            let calledInit: RequestInit | undefined;
+
+            globalThis.fetch = (async (
+                input: RequestInfo | URL,
+                init?: RequestInit,
+            ) => {
+                calledUrl =
+                    typeof input === "string"
+                        ? input
+                        : input instanceof URL
+                          ? input.toString()
+                          : input.url;
+                calledInit = init;
+
+                return new Response(
+                    JSON.stringify({
+                        status: "success",
+                        model_id: "demo",
+                        message: "Image construite.",
+                    }),
+                    {
+                        status: 200,
+                        headers: { "Content-Type": "application/json" },
+                    },
+                );
+            }) as typeof fetch;
+
+            try {
+                const result = await buildModelImage(
+                    "demo",
+                    "http://127.0.0.1:8000",
+                );
+
+                expect(calledUrl).toBe(
+                    "http://127.0.0.1:8000/api/models/demo/build",
+                );
+                expect(calledInit?.method).toBe("POST");
+                expect(calledInit?.body).toBeUndefined();
+                expect(result).toEqual({
+                    status: "success",
+                    model_id: "demo",
+                    message: "Image construite.",
+                });
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
+        });
+
+        it("devrait remonter le détail d'erreur renvoyé par FastAPI", async () => {
+            const originalFetch = globalThis.fetch;
+
+            globalThis.fetch = (async () =>
+                new Response(
+                    JSON.stringify({ detail: "Erreur de build Docker" }),
+                    {
+                        status: 500,
+                        headers: { "Content-Type": "application/json" },
+                    },
+                )) as unknown as typeof fetch;
+
+            try {
+                await expect(
+                    buildModelImage("demo", "http://127.0.0.1:8000"),
+                ).rejects.toThrow("Erreur de build Docker");
+            } finally {
+                globalThis.fetch = originalFetch;
+            }
         });
     });
 });
