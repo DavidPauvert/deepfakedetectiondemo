@@ -15,7 +15,7 @@ pip install -r requirements.txt
 
 ### 2. Lancer le serveur FastAPI
 ```bash
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 8000                                      
 ```
 - **Documentation Swagger UI interactive** : [http://localhost:8000/docs](http://localhost:8000/docs)
 - **Vérification d'état (Healthcheck)** : [http://localhost:8000/api/health](http://localhost:8000/api/health)
