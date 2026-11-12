@@ -71,30 +71,27 @@ def list_models():
     )
 
 
-@router.post("/models/{model_id}/build", tags=["Models"])
+@router.post("/models/{model_id}/build", status_code=status.HTTP_202_ACCEPTED, tags=["Models"])
 def build_model(model_id: str):
-    """
-    Builds the Docker image for a specific model.
-    """
+    """Lance le build en arrière-plan et répond immédiatement."""
     if model_id not in MODELS_REGISTRY:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Modèle '{model_id}' introuvable dans le registre des modèles.",
         )
+    st = docker_runner.start_build(model_id)
+    return {"model_id": model_id, **st}
 
-    try:
-        output = docker_runner.build_model_image(model_id)
-        return {
-            "status": "success",
-            "model_id": model_id,
-            "message": f"Image '{MODELS_REGISTRY[model_id].image_tag}' construite.",
-            "build_output_snippet": output[-500:] if len(output) > 500 else output,
-        }
-    except Exception as e:
+
+@router.get("/models/{model_id}/build/status", tags=["Models"])
+def build_status(model_id: str):
+    """États possibles : idle, building, ready, failed."""
+    if model_id not in MODELS_REGISTRY:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erreur de construction docker pour '{model_id}': {str(e)}",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Modèle '{model_id}' introuvable dans le registre des modèles.",
         )
+    return {"model_id": model_id, **docker_runner.get_build_status(model_id)}
 
 
 @router.post("/predict", response_model=PredictionResult, tags=["Inference"])

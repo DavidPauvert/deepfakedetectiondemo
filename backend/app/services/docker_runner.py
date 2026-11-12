@@ -1,3 +1,8 @@
+import threading
+import time
+from collections import deque
+from typing import Callable
+
 import tempfile
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional
@@ -18,6 +23,8 @@ class DockerRunnerService:
     def __init__(self):
         self._client: Optional[docker.DockerClient] = None
         self._gpu_ok: Optional[bool] = None
+        self._builds: Dict[str, Dict[str, Any]] = {}
+        self._builds_lock = threading.Lock()
 
     @property
     def client(self) -> docker.DockerClient:
@@ -72,7 +79,7 @@ class DockerRunnerService:
         
         return self._gpu_ok
 
-    def build_model_image(self, model_id: str) -> str:
+    def build_model_image(self, model_id: str, on_line: Optional[Callable[[str], None]] = None) -> str:
         """
         Builds the Docker image for the given model_id.
         """
@@ -93,12 +100,16 @@ class DockerRunnerService:
                     line = chunk["stream"]
                     print(line, end="", flush=True)
                     collected_logs.append(line)
+                    if on_line:
+                        on_line(line)
                 elif "status" in chunk:  # ex: pull de l'image de base
                     line = chunk["status"]
                     if chunk.get("progress"):
                         line += f" {chunk['progress']}"
                     print(line, flush=True)
                     collected_logs.append(line + "\n")
+                    if on_line:
+                        on_line(line)
                 elif "error" in chunk:
                     # Avec l'API bas niveau, les erreurs de build arrivent
                     # dans le flux et ne lèvent pas BuildError
@@ -272,6 +283,47 @@ class DockerRunnerService:
             container.remove(force=True)
         except DockerException:
             pass
+        
+    def start_build(self, model_id: str) -> Dict[str, Any]:
+        self._get_model_cfg(model_id)  # lève ValueError si le modèle est inconnu
+        with self._builds_lock:
+            current = self._builds.get(model_id)
+            if current and current["state"] == "building":
+                return self.get_build_status(model_id)  # déjà en cours : pas de 2e build
+            self._builds[model_id] = {
+                "state": "building",
+                "started_at": time.time(),
+                "finished_at": None,
+                "error": None,
+                "log_tail": deque(maxlen=30),
+            }
+        threading.Thread(target=self._build_worker, args=(model_id,), daemon=True).start()
+        return self.get_build_status(model_id)
+
+    def get_build_status(self, model_id: str) -> Dict[str, Any]:
+        cfg = self._get_model_cfg(model_id)
+        with self._builds_lock:
+            current = self._builds.get(model_id)
+            if current:
+                return {**current, "log_tail": list(current["log_tail"])}
+        state = "ready" if self.is_image_built(cfg.image_tag) else "idle"
+        return {"state": state, "started_at": None, "finished_at": None, "error": None, "log_tail": []}
+
+    def _build_worker(self, model_id: str) -> None:
+        def on_line(line: str) -> None:
+            line = line.rstrip()
+            if line:
+                with self._builds_lock:
+                    self._builds[model_id]["log_tail"].append(line)
+
+        try:
+            self.build_model_image(model_id, on_line=on_line)
+            final = {"state": "ready", "error": None}
+        except Exception as e:
+            final = {"state": "failed", "error": str(e)[-2000:]}
+
+        with self._builds_lock:
+            self._builds[model_id].update(final, finished_at=time.time())
 
 
 docker_runner = DockerRunnerService()

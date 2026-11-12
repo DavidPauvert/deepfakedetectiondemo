@@ -232,22 +232,38 @@ function extractApiErrorDetail(errorData: unknown, fallback: string): string {
     return fallback;
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** États renvoyés par GET /api/models/{id}/build/status */
+type BuildStatusResponse = {
+    state: "idle" | "building" | "ready" | "failed";
+    error?: string | null;
+    log_tail?: string[];
+};
+
 /**
- * Déclenche la construction (ou reconstruction) de l'image Docker pour un
- * modèle spécifique. Le build pouvant être long, aucun timeout côté frontend
- * n'est appliqué.
+ * Construit l'image Docker d'un modèle.
+ * Le backend lance le build en arrière-plan et répond immédiatement ;
+ * on interroge ensuite son statut jusqu'à la fin. Aucune requête ne dure
+ * longtemps, donc aucun risque de coupure réseau, même pour un build de
+ * plusieurs minutes. La promesse se résout quand l'image est prête et
+ * échoue si le build échoue.
  */
 export async function buildModelImage(
     modelId: string,
     targetBaseUrl?: string,
     signal?: AbortSignal,
-): Promise<BuildModelResponse> {
-    const url = buildEndpointUrl(
-        `/api/models/${encodeURIComponent(modelId)}/build`,
+): Promise<void> {
+    const id = encodeURIComponent(modelId);
+    const startUrl = buildEndpointUrl(`/api/models/${id}/build`, targetBaseUrl);
+    const statusUrl = buildEndpointUrl(
+        `/api/models/${id}/build/status`,
         targetBaseUrl,
     );
+
+    // 1. Lancement du build : réponse immédiate (202)
     try {
-        const response = await fetch(url, {
+        const response = await fetch(startUrl, {
             method: "POST",
             headers: { Accept: "application/json" },
             signal,
@@ -264,10 +280,59 @@ export async function buildModelImage(
                 ),
             );
         }
-
-        return (await response.json()) as BuildModelResponse;
     } catch (err) {
-        throw handleFetchError(err, url);
+        throw handleFetchError(err, startUrl);
+    }
+
+    // 2. Suivi du statut jusqu'à la fin
+    const POLL_INTERVAL_MS = 3000;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    let consecutiveErrors = 0;
+
+    while (true) {
+        await sleep(POLL_INTERVAL_MS);
+
+        let status: BuildStatusResponse;
+        try {
+            const response = await fetch(statusUrl, {
+                method: "GET",
+                headers: { Accept: "application/json" },
+                signal,
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            status = (await response.json()) as BuildStatusResponse;
+            consecutiveErrors = 0;
+        } catch (err) {
+            // Annulation volontaire : on ne réessaie pas
+            if (signal?.aborted) {
+                throw handleFetchError(err, statusUrl);
+            }
+            // Une coupure brève ne doit pas faire échouer un long build
+            consecutiveErrors += 1;
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                throw new Error(
+                    "Connexion au serveur perdue pendant la construction de l'image.",
+                );
+            }
+            continue;
+        }
+
+        if (status.state === "ready") return;
+
+        if (status.state === "failed") {
+            throw new Error(
+                status.error?.trim() || "Échec de la construction de l'image.",
+            );
+        }
+
+        if (status.state === "idle") {
+            throw new Error(
+                "La construction s'est interrompue (le serveur a peut-être redémarré).",
+            );
+        }
+        // state === "building" : on continue d'attendre
     }
 }
 
